@@ -38,12 +38,12 @@ This repo is the piece [komm-server's own README](https://github.com/B077AS/komm
 
 ## Install
 
-**Windows:** run `Komm-Server-Setup-<version>.exe` from the
-[latest release](https://github.com/B077AS/komm-server-launcher/releases/latest) (published by komm-server's release workflow, not this repo's — see [Building from source](#building-from-source-developers)). The installer can seed a working, already-running service in one pass, prompting for your verification code as it goes.
+**Windows:** run `Komm-Server-Setup-<version>.exe` from komm-server's
+[latest release](https://github.com/B077AS/komm-server/releases/latest) (published by komm-server's release workflow, not this repo's — see [Building from source](#building-from-source-developers)). The installer can seed a working, already-running service in one pass, prompting for your verification code as it goes.
 
 **Linux:**
 ```bash
-curl -LO https://github.com/B077AS/komm-server-launcher/releases/latest/download/komm-server-launcher-linux-amd64.tar.gz
+curl -LO https://github.com/B077AS/komm-server/releases/latest/download/komm-server-launcher-linux-amd64.tar.gz
 tar xzf komm-server-launcher-linux-amd64.tar.gz
 cd komm-server-launcher-linux
 sudo ./install.sh
