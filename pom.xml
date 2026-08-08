@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>kommserver</groupId>
+    <artifactId>komm-server-launcher</artifactId>
+    <version>0.0.1</version>
+    <packaging>jar</packaging>
+
+    <name>komm-server-launcher</name>
+    <description>Installer, OS service manager, and CLI for self-hosted komm-server installations</description>
+
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <maven.compiler.release>21</maven.compiler.release>
+        <lombok.version>1.18.46</lombok.version>
+        <picocli.version>4.7.6</picocli.version>
+    </properties>
+
+    <!-- One fat jar (target/komm-server-launcher.jar) runs unmodified on both Windows and
+         Linux — OS detection happens at runtime (see Platform.java). Unlike the desktop
+         client launcher this has no natives to bundle and no need for a private jlink
+         runtime, since anyone running komm-server already has Java 21 installed to run it. -->
+    <dependencies>
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli</artifactId>
+            <version>${picocli.version}</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.fusesource.jansi/jansi -->
+        <dependency>
+            <groupId>org.fusesource.jansi</groupId>
+            <artifactId>jansi</artifactId>
+            <version>2.4.1</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/com.google.code.gson/gson -->
+        <dependency>
+            <groupId>com.google.code.gson</groupId>
+            <artifactId>gson</artifactId>
+            <version>2.14.0</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/org.projectlombok/lombok -->
+        <dependency>
+            <groupId>org.projectlombok</groupId>
+            <artifactId>lombok</artifactId>
+            <version>${lombok.version}</version>
+        </dependency>
+        <!-- https://mvnrepository.com/artifact/ch.qos.logback/logback-classic -->
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.5.34</version>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <!-- Pinned so every release produces an identically-named jar — both the Linux
+             tarball install and the self-updater rely on that name never changing. -->
+        <finalName>komm-server-launcher</finalName>
+        <plugins>
+            <plugin>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.15.0</version>
+                <configuration>
+                    <release>21</release>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                        <configuration>
+                            <transformers>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>com.kommserver.launcher.Launcher</mainClass>
+                                    <manifestEntries>
+                                        <Implementation-Version>${project.version}</Implementation-Version>
+                                    </manifestEntries>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                            <filters>
+                                <filter>
+                                    <artifact>*:*</artifact>
+                                    <excludes>
+                                        <exclude>META-INF/*.SF</exclude>
+                                        <exclude>META-INF/*.DSA</exclude>
+                                        <exclude>META-INF/*.RSA</exclude>
+                                    </excludes>
+                                </filter>
+                            </filters>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!-- Local equivalents of what komm-server's own CI does after checking out this repo's
+         latest release (see komm-server/.github/workflows/release.yml) — for testing the
+         full installer/tarball before actually publishing a release. By default both
+         download the real "latest" komm-server.jar (and, on Windows, WinSW) themselves via
+         Ant's <get>, same stable release URLs the real pipeline uses. Pass
+         -Dserver.jar=path\to\your\locally-built\komm-server-X.jar to bundle that instead —
+         useful for testing unreleased server changes, since the installer registers and
+         starts the service automatically as part of the same run (no window to manually
+         swap the jar in afterward). -Dserver.version=X labels the build either way;
+         defaults to "dev" since there's no release tag to read it from locally. -->
+    <profiles>
+        <profile>
+            <!-- mvn clean package -Pinstaller
+                 mvn clean package -Pinstaller -Dserver.jar=..\komm-server\target\komm-server-0.0.2.jar
+                 Needs Inno Setup 6 (winget install JRSoftware.InnoSetup).
+                 -> target/installer/Komm-Server-Launcher-Setup-<server.version>.exe -->
+            <id>installer</id>
+            <properties>
+                <server.version>dev</server.version>
+                <server.jar></server.jar>
+                <server.jar.url>https://github.com/B077AS/komm-server/releases/latest/download/komm-server.jar</server.jar.url>
+                <winsw.url>https://github.com/winsw/winsw/releases/download/v2.12.0/WinSW-x64.exe</winsw.url>
+                <iscc.path>${env.LOCALAPPDATA}/Programs/Inno Setup 6/ISCC.exe</iscc.path>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>stage-installer-input</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <mkdir dir="${project.build.directory}/installer-input"/>
+                                        <copy file="${project.build.directory}/${project.build.finalName}.jar"
+                                              todir="${project.build.directory}/installer-input"/>
+                                        <copy file="${project.basedir}/packaging/windows/kommserver.cmd"
+                                              todir="${project.build.directory}/installer-input"/>
+                                        <condition property="use-local-server-jar">
+                                            <length string="${server.jar}" trim="true" length="0" when="greater"/>
+                                        </condition>
+                                        <fail message="server.jar not found: ${server.jar} — build it first (mvn clean package in komm-server)">
+                                            <condition>
+                                                <and>
+                                                    <isset property="use-local-server-jar"/>
+                                                    <not><available file="${server.jar}"/></not>
+                                                </and>
+                                            </condition>
+                                        </fail>
+                                        <echo>komm-server.jar: local override = "${server.jar}" (blank means download instead)</echo>
+                                        <!-- server.jar may be relative (e.g. ..\komm-server\target\...) — resolve to an
+                                             absolute path first, since a relative path glued into a file:/// URI resolves
+                                             against the filesystem root, not the current directory. -->
+                                        <property name="server.jar.absolute" location="${server.jar}"/>
+                                        <condition property="resolved.server.jar.source" value="file:///${server.jar.absolute}">
+                                            <isset property="use-local-server-jar"/>
+                                        </condition>
+                                        <condition property="resolved.server.jar.source" value="${server.jar.url}">
+                                            <not><isset property="use-local-server-jar"/></not>
+                                        </condition>
+                                        <get src="${resolved.server.jar.source}"
+                                             dest="${project.build.directory}/installer-input/komm-server.jar"
+                                             usetimestamp="true"/>
+                                        <echo>Downloading WinSW from ${winsw.url} ...</echo>
+                                        <get src="${winsw.url}"
+                                             dest="${project.build.directory}/installer-input/komm-server-service.exe"
+                                             usetimestamp="true"/>
+                                        <echo file="${project.build.directory}/installer-input/launcher.properties">server.version=${server.version}</echo>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.5.0</version>
+                        <executions>
+                            <execution>
+                                <id>inno-setup-installer</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>${iscc.path}</executable>
+                                    <arguments>
+                                        <argument>/DAppVersion=${server.version}</argument>
+                                        <argument>/DSourceDir=${project.build.directory}/installer-input</argument>
+                                        <argument>/DOutputDir=${project.build.directory}/installer</argument>
+                                        <argument>${project.basedir}/packaging/windows/komm-server-launcher.iss</argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+
+        <profile>
+            <!-- mvn clean package -Ptarball
+                 -> target/komm-server-launcher-linux-amd64.tar.gz
+                 Assembly only (Ant's <tar> writes POSIX permissions into the archive
+                 regardless of host OS), so this also works fine run from Windows — it
+                 just produces a tarball meant to be extracted and installed on Linux. -->
+            <id>tarball</id>
+            <properties>
+                <server.version>dev</server.version>
+                <server.jar></server.jar>
+                <server.jar.url>https://github.com/B077AS/komm-server/releases/latest/download/komm-server.jar</server.jar.url>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-antrun-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>assemble-tarball</id>
+                                <phase>package</phase>
+                                <goals>
+                                    <goal>run</goal>
+                                </goals>
+                                <configuration>
+                                    <target>
+                                        <property name="stage" value="${project.build.directory}/komm-server-launcher-linux"/>
+                                        <mkdir dir="${stage}"/>
+                                        <copy file="${project.build.directory}/${project.build.finalName}.jar" todir="${stage}"/>
+                                        <copy file="${project.basedir}/packaging/linux/install.sh" todir="${stage}"/>
+                                        <copy file="${project.basedir}/packaging/linux/uninstall.sh" todir="${stage}"/>
+                                        <condition property="use-local-server-jar">
+                                            <length string="${server.jar}" trim="true" length="0" when="greater"/>
+                                        </condition>
+                                        <fail message="server.jar not found: ${server.jar} — build it first (mvn clean package in komm-server)">
+                                            <condition>
+                                                <and>
+                                                    <isset property="use-local-server-jar"/>
+                                                    <not><available file="${server.jar}"/></not>
+                                                </and>
+                                            </condition>
+                                        </fail>
+                                        <echo>komm-server.jar: local override = "${server.jar}" (blank means download instead)</echo>
+                                        <!-- server.jar may be relative — resolve to an absolute path first, since a
+                                             relative path glued into a file:/// URI resolves against the filesystem
+                                             root, not the current directory. -->
+                                        <property name="server.jar.absolute" location="${server.jar}"/>
+                                        <condition property="resolved.server.jar.source" value="file:///${server.jar.absolute}">
+                                            <isset property="use-local-server-jar"/>
+                                        </condition>
+                                        <condition property="resolved.server.jar.source" value="${server.jar.url}">
+                                            <not><isset property="use-local-server-jar"/></not>
+                                        </condition>
+                                        <get src="${resolved.server.jar.source}" dest="${stage}/komm-server.jar" usetimestamp="true"/>
+                                        <echo file="${stage}/SERVER_VERSION">${server.version}</echo>
+                                        <tar destfile="${project.build.directory}/komm-server-launcher-linux-amd64.tar.gz" compression="gzip">
+                                            <tarfileset dir="${stage}" prefix="komm-server-launcher-linux">
+                                                <exclude name="install.sh"/>
+                                                <exclude name="uninstall.sh"/>
+                                            </tarfileset>
+                                            <tarfileset dir="${stage}" prefix="komm-server-launcher-linux" filemode="755">
+                                                <include name="install.sh"/>
+                                                <include name="uninstall.sh"/>
+                                            </tarfileset>
+                                        </tar>
+                                    </target>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>
+
+<!-- mvn clean package                       fat jar at target/komm-server-launcher.jar
+     mvn -DnewVersion=X versions:set          stamp a version before a release build (CI does this from the tag)
+     mvn clean package -Pinstaller            local Windows installer build (downloads komm-server.jar + WinSW itself)
+     mvn clean package -Ptarball              local Linux tarball build (downloads komm-server.jar itself)
+     mvn clean package -Pinstaller -Dserver.jar=..\komm-server\target\komm-server-0.0.1.jar -Dserver.version=local-test
+     mvn clean package -Ptarball -Dserver.jar=..\komm-server\target\komm-server-0.0.1.jar -Dserver.version=local-test -->

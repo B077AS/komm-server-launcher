@@ -1,0 +1,42 @@
+# Release pipeline for komm-server-launcher itself — mirrors komm-launcher's own release
+# workflow: this only ever publishes the bare self-update jar, never a full installer.
+#
+# The full Windows installer / Linux tarball (which bundle WinSW, the PATH shim, and
+# optionally a seeded komm-server jar) are built from komm-server's OWN release
+# workflow, which checks out this repo's latest release tag and uses its packaging/
+# scripts against whichever server version that release just built — same relationship
+# as the komm client's release workflow building the installer from komm-launcher.
+
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  jar:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      - name: Set Maven version from release tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: mvn -B versions:set "-DnewVersion=${TAG#v}" -DgenerateBackupPoms=false
+
+      - name: Build launcher jar
+        run: mvn -B clean package
+
+      - name: Attach jar to the release
+        run: gh release upload "$GITHUB_REF_NAME" target/komm-server-launcher.jar --clobber
