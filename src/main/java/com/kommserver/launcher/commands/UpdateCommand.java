@@ -1,24 +1,24 @@
 package com.kommserver.launcher.commands;
 
 import com.kommserver.launcher.Palette;
+import com.kommserver.launcher.Platform;
 import com.kommserver.launcher.config.LauncherConfig;
 import com.kommserver.launcher.service.ServiceController;
 import com.kommserver.launcher.service.ServiceControllerFactory;
+import com.kommserver.launcher.update.LauncherUpdateManager;
 import com.kommserver.launcher.update.ServerUpdateManager;
 import picocli.CommandLine;
 
 import java.util.Scanner;
 
 /**
- * Updates the managed komm-server jar only. The launcher does NOT update itself here —
- * a CLI process overwriting the jar it's currently executing from is exactly the kind of
- * self-swap the client/launcher pair avoids (the client updates the launcher, never the
- * other way round, because the launcher can't reliably outlive its own update of itself).
- * komm-server plays that "client" role for us: it runs 24/7 and checks for a newer
- * komm-server-launcher release itself, overwriting the (not currently running, or at
- * least not-this-process) launcher jar — see LauncherSelfUpdateService in komm-server.
+ * Checks for and applies both a newer komm-server (the managed jar) and a newer
+ * komm-server-launcher (this CLI itself). The server side restarts the running service, with
+ * confirmation, exactly as before. The launcher side never needs a restart or a prompt — see
+ * {@link LauncherUpdateManager}'s javadoc for how it avoids renaming this process's own
+ * currently-loaded jar out from under itself, particularly on Windows.
  */
-@CommandLine.Command(name = "update", description = "Check for and apply a komm-server update")
+@CommandLine.Command(name = "update", description = "Check for and apply komm-server and launcher updates")
 public class UpdateCommand implements Runnable {
 
     @CommandLine.Option(names = "--yes", description = "Don't prompt before restarting a running server")
@@ -26,6 +26,11 @@ public class UpdateCommand implements Runnable {
 
     @Override
     public void run() {
+        checkAndApplyServerUpdate();
+        checkAndApplyLauncherUpdate();
+    }
+
+    private void checkAndApplyServerUpdate() {
         try {
             ServerUpdateManager manager = new ServerUpdateManager();
             LauncherConfig config = LauncherConfig.load();
@@ -66,6 +71,39 @@ public class UpdateCommand implements Runnable {
             }
         } catch (Exception e) {
             System.out.println(Palette.danger("server update check failed: ") + e.getMessage());
+        }
+    }
+
+    private void checkAndApplyLauncherUpdate() {
+        try {
+            LauncherUpdateManager manager = new LauncherUpdateManager();
+            var result = manager.check();
+            if (!result.updateAvailable()) {
+                System.out.println(Palette.muted("launcher: up to date (" + result.currentVersion() + ")"));
+                return;
+            }
+            System.out.println(Palette.accent("launcher: ") + Palette.cyan(result.currentVersion()) + " -> " + Palette.cyan(result.latestVersion()));
+            System.out.println(Palette.muted("Downloading launcher " + result.latestVersion() + "..."));
+
+            long[] lastPrinted = {-1};
+            manager.apply(result.release(), (transferred, total) -> {
+                long step = total > 0 ? Math.max(total / 100, 8192) : 262144;
+                if (transferred != total && transferred - lastPrinted[0] < step) return;
+                lastPrinted[0] = transferred;
+                printProgress(transferred, total);
+            });
+            System.out.println();
+
+            if (Platform.isWindows()) {
+                System.out.println(Palette.success("✓") + " launcher update to " + Palette.cyan(result.latestVersion())
+                        + " downloaded — it finishes applying itself in the background once this command exits, "
+                        + "and shows up on the next `kommserver` command.");
+            } else {
+                System.out.println(Palette.success("✓") + " launcher updated to " + Palette.cyan(result.latestVersion())
+                        + " — takes effect on the next `kommserver` command.");
+            }
+        } catch (Exception e) {
+            System.out.println(Palette.danger("launcher update check failed: ") + e.getMessage());
         }
     }
 

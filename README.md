@@ -36,7 +36,7 @@ This repo is the piece [komm-server's own README](https://github.com/B077AS/komm
 - **Registers komm-server as a real OS service** — a Windows Service via [WinSW](https://github.com/winsw/winsw) on Windows, a `systemd` unit on Linux — so it starts at boot and restarts itself on crash. This also covers the restart komm-server needs once it writes its hub-issued TLS certificate to disk (`server.ssl.*` only takes effect on the next boot); the service supervisor handles that automatically instead of it being a manual step.
 - **A small branded CLI, `kommserver`**, for status/start/stop/restart/update/logs — the same commands on both platforms.
 - **On Windows, an optional tray icon** (`kommserver tray`, started at login) wrapping the same commands, since a Windows Service can never draw UI itself (Session 0 isolation) — the tray is a separate, ordinary login-session process, not the service.
-- **Updates the managed komm-server jar** — `kommserver update` checks GitHub for the latest komm-server release and, with confirmation if the server is currently running, downloads and swaps it in.
+- **Updates the managed komm-server jar, and itself** — `kommserver update` checks GitHub for the latest komm-server release and, with confirmation if the server is currently running, downloads and swaps it in; it also checks for a newer komm-server-launcher release and applies that too, no confirmation needed since nothing user-visible restarts for it.
 - **Handles first-time activation** — a fresh server jar has no per-installation identity baked in; `kommserver install-service` prompts for the verification code (fetched from the [komm](https://github.com/B077AS/komm) desktop client's "Get Verification Code" option, shown on an installation card only while it's still unverified) and hands it to komm-server as a one-time setup token, the same way the Windows installer's own activation page does.
 
 ## Install
@@ -89,13 +89,21 @@ Since your existing `keys/tls-cert.pem` stays right where it is, `kommserver ins
 
 ## How updates work
 
-`kommserver update` asks GitHub's API directly for [komm-server](https://github.com/B077AS/komm-server)'s latest release and compares it against the version this launcher last installed (tracked in `launcher.properties`, not re-derived from the jar every time). If the server is running, it asks for confirmation before downloading and restarting (`--yes` skips the prompt).
+`kommserver update` checks two things against GitHub, independently:
+
+- **[komm-server](https://github.com/B077AS/komm-server)** — compared against the version this launcher last installed (tracked in `launcher.properties`, not re-derived from the jar every time). If the server is running, it asks for confirmation before downloading and restarting (`--yes` skips the prompt).
+- **komm-server-launcher itself** — compared against the version baked into this exact running jar's manifest. Applied automatically, no prompt, since nothing user-visible restarts for it.
 
 The download itself shows a live progress bar in the terminal — percentage, transferred/total size — redrawn in place on both Windows and Linux, since it's plain JVM code (`\r` line-redraw, no OS-specific terminal APIs involved):
 
 ```
 [████████████████░░░░░░░░]  67%  (24.1 MB / 35.9 MB)
 ```
+
+**Applying the launcher's own update** is the one tricky part, since a process can't reliably rename the exact jar file it's currently running from:
+
+- **Linux**: no problem — POSIX lets a file be replaced while a process still has it open (that process just keeps using the old, now-unlinked copy in memory). The download goes straight to the installed `komm-server-launcher.jar`; the next `kommserver` command simply picks up the new one.
+- **Windows**: the download is staged as `komm-server-launcher.jar.new`, the resident tray process is stopped if it's running (same mechanism the installer already uses for this), and the actual swap is handed off to a short-lived, detached background process that waits for this command to exit, then moves the staged jar into place. `kommserver update` itself returns immediately after staging — the swap finishes a moment later, invisibly, and shows up on the next `kommserver` command.
 
 ## Building from source (developers)
 
@@ -168,7 +176,7 @@ release tag to read it from locally.
 
 **Does uninstalling remove my server data?** No — `uninstall-service` only stops and deregisters the OS service registration. `komm-postgres-data/`, `keys/`, and `uploads/` next to the server jar are untouched.
 
-**Why doesn't `kommserver update` update the launcher itself?** A process overwriting the jar it's currently running from is fragile by nature — the client/launcher pair avoids exactly this by having the client update the launcher, never the reverse. `kommserver update` only ever touches the managed komm-server jar.
+**Does `kommserver update` update the launcher itself?** Yes — see [How updates work](#how-updates-work) for how it avoids the "a process can't reliably overwrite the jar it's currently running from" problem, especially on Windows.
 
 ## License
 
