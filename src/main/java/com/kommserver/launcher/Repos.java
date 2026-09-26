@@ -4,9 +4,7 @@ public final class Repos {
 
     public static final String OWNER = "B077AS";
     public static final String SERVER_REPO = "komm-server";
-
-    /** Stable-named asset komm-server's own release workflow publishes on every release. */
+    public static final String LAUNCHER_REPO = "komm-server-launcher";
     public static final String SERVER_JAR_ASSET = "komm-server.jar";
-
-    private Repos() {}
+    public static final String LAUNCHER_JAR_ASSET = "komm-server-launcher.jar";
 }
